@@ -1,0 +1,34 @@
+# Core dependencies
+python-dotenv>=1.0.0
+requests>=2.31.0
+
+# Google Drive
+google-auth>=2.23.0
+google-auth-oauthlib>=1.1.0
+google-auth-httplib2>=0.1.1
+google-api-python-client>=2.101.0
+
+# Dropbox (Legacy - No longer used)
+# dropbox>=11.36.0
+
+# Google / YouTube
+google-auth-oauthlib>=1.1.0
+google-auth-httplib2>=0.1.1
+google-api-python-client>=2.101.0
+
+# Image/Video Processing
+Pillow>=10.0.0
+opencv-python>=4.8.0
+imageio>=2.31.0
+imageio-ffmpeg>=0.4.8
+
+# TTS (if needed)
+edge-tts>=6.1.0
+
+# Audio Processing
+decorator>=5.1.0
+proglog>=0.1.9
+
+# Utilities
+tqdm>=4.66.0
+numpy>=1.24.0
