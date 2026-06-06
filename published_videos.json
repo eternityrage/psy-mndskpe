@@ -190,5 +190,21 @@
             },
             "recycled": false
         }
+    },
+    {
+        "video_name": "Avatar_Video_22_subtitled.mp4",
+        "metadata": {
+            "title": "The Hidden Scripts in Your Brain: How Cognitive Bias Turns \u201cReality\u201d into a Story",
+            "description": "Have you ever noticed how two people can watch the same event and walk away with completely different \u201cfacts\u201d? In this video, I\u2019ll unpack one of the most fascinating psychology concepts\u2014how cognitive biases quietly shape what your brain pays attention to, how it interprets information, and even what it remembers later. We\u2019ll explore the difference between raw reality and the story your mind constructs, using insights from behavioral science and psychiatric research to show why this isn\u2019t just \u201cmistaken thinking,\u201d it\u2019s brain design working overtime. I\u2019ll also share practical ways you can catch these bias-driven detours in real time\u2014so your decisions, relationships, and self-talk start getting a little more accurate and a lot more empowering. Like if this psychology fact blew your mind! Comment your thoughts on this concept! Share this with someone who loves learning! Follow Psychology Mindscape for daily mind-expanding lessons!",
+            "success_flags": {
+                "instagram_reel": true,
+                "instagram_story": false,
+                "facebook_reel": true,
+                "facebook_story": true,
+                "threads": false,
+                "youtube": false
+            },
+            "recycled": false
+        }
     }
 ]
