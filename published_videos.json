@@ -1294,5 +1294,21 @@
             },
             "recycled": true
         }
+    },
+    {
+        "video_name": "Avatar_Video_32_subtitled.mp4",
+        "metadata": {
+            "title": "The Brain\u2019s \u201cLie Detector\u201d Illusion: Why Your Memories Rewrite The Past",
+            "description": "What if your brain isn\u2019t storing memories like a camera\u2014but editing them like a filmmaker? In this mind-blowing short, we\u2019ll break down how reconsolidation, false familiarity, and expectation can quietly reshape what you believe happened, even when you\u2019re 100% confident. You might think \u201cconfidence equals accuracy,\u201d but psychology research suggests the feeling of remembering is often more about reconstruction than truth. Get ready to challenge a common assumption: the past you recall may be less of a record and more of a creative prediction your brain uses to protect, plan, and make sense of life. Like if this psychology fact blew your mind! Comment your thoughts on this concept! Share this with someone who loves learning! Follow Psychology Mindscape for daily mind-expanding lessons!",
+            "success_flags": {
+                "instagram_reel": true,
+                "instagram_story": false,
+                "facebook_reel": true,
+                "facebook_story": true,
+                "threads": false,
+                "youtube": false
+            },
+            "recycled": true
+        }
     }
 ]
