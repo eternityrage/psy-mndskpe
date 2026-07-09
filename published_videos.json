@@ -1774,5 +1774,21 @@
             },
             "recycled": true
         }
+    },
+    {
+        "video_name": "Avatar_Video_32_subtitled.mp4",
+        "metadata": {
+            "title": "Why Your Brain \u201cFills in the Gaps\u201d: The Psychology Behind Perception (And Misbeliefs) \ud83e\udde0\u2728",
+            "description": "Ever notice how your brain seems to \u201cknow\u201d what you saw\u2014even when it didn\u2019t actually see everything? In this short episode, we\u2019re exploring a mind-blowing psychology idea: how perception isn\u2019t a perfect recording of reality, but a creative construction shaped by expectations, attention, and past experience. I\u2019ll break down the psychological mechanisms behind why we confidently interpret incomplete information\u2014sometimes leading to powerful insights, and sometimes leading to stubborn misconceptions. You\u2019ll learn how concepts from cognitive science and neuroscience help explain everyday experiences like misremembering, confirmation bias, and why two people can witness the \u201csame\u201d event and walk away with different stories. Like if this psychology fact blew your mind! Comment your thoughts on this concept! Share this with someone who loves learning! Follow Psychology Mindscape for daily mind-expanding lessons!",
+            "success_flags": {
+                "instagram_reel": false,
+                "instagram_story": false,
+                "facebook_reel": true,
+                "facebook_story": true,
+                "threads": false,
+                "youtube": false
+            },
+            "recycled": true
+        }
     }
 ]
