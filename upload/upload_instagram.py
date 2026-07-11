@@ -259,8 +259,8 @@ def upload_to_instagram(video_path, caption, is_story=False):
         container_id = container_response.json().get('id')
         print(f"[instagram] Container created: {container_id}")
 
-        print("[instagram] Step 3: Waiting 60 seconds for processing...")
-        time.sleep(60)
+        print("[instagram] Step 3: Waiting 90 seconds for processing...")
+        time.sleep(90)
 
         # Step 4: Publish
         print("[instagram] Step 4: Publishing...")
