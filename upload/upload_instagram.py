@@ -25,47 +25,36 @@ def get_video_duration(video_path):
     return None
 
 
-def ensure_compatible_format(video_path):
+def reencode_for_instagram(video_path):
+    """Re-encode video to Instagram-compatible format (H.264, AAC, max 1080p)."""
     path = Path(video_path)
-    temp_dir = Path(tempfile.gettempdir()) / "ig_convert"
+    temp_dir = Path(tempfile.gettempdir()) / "ig_encode"
     temp_dir.mkdir(parents=True, exist_ok=True)
-    converted = temp_dir / f"converted_{path.stem}.mp4"
+    output = temp_dir / f"ig_{path.stem}.mp4"
 
-    try:
-        result = subprocess.run(
-            ['ffprobe', '-v', 'error', '-select_streams', 'v:0',
-             '-show_entries', 'stream=codec_name',
-             '-of', 'default=noprint_wrappers=1:nokey=1', str(path)],
-            capture_output=True, text=True, timeout=15
-        )
-        codec = result.stdout.strip() if result.returncode == 0 else ""
-    except Exception:
-        codec = ""
-
-    if codec == "h264":
-        print(f"[instagram] Video already H.264, no conversion needed")
-        return str(path)
-
-    print(f"[instagram] Converting video (codec: {codec or 'unknown'}) to H.264...")
+    print(f"[instagram] Re-encoding video for Instagram compatibility...")
     try:
         subprocess.run(
-            ['ffmpeg', '-i', str(path), '-c:v', 'libx264', '-preset', 'fast',
-             '-crf', '23', '-c:a', 'aac', '-movflags', '+faststart',
-             '-y', str(converted)],
+            ['ffmpeg', '-i', str(path),
+             '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+             '-vf', 'scale=min(1080,iw):min(1920,ih):force_original_aspect_ratio=decrease',
+             '-c:a', 'aac', '-b:a', '128k',
+             '-movflags', '+faststart',
+             '-y', str(output)],
             capture_output=True, text=True, timeout=300
         )
-        print(f"[instagram] Converted to: {converted}")
-        return str(converted)
+        out_size_mb = output.stat().st_size / (1024 * 1024)
+        print(f"[instagram] Re-encoded to: {output} ({out_size_mb:.1f} MB)")
+        return str(output)
     except subprocess.TimeoutExpired:
-        print(f"[instagram] Conversion timed out, using original")
+        print(f"[instagram] Re-encode timed out, using original")
         return str(path)
     except Exception as e:
-        print(f"[instagram] Conversion failed ({e}), using original")
+        print(f"[instagram] Re-encode failed ({e}), using original")
         return str(path)
 
 
 def upload_resumable(api_base, user_id, access_token, media_type, caption, upload_path):
-    """Try resumable upload method first."""
     file_size = Path(upload_path).stat().st_size
 
     print(f"[instagram] Step 1: Starting resumable upload session...")
@@ -87,23 +76,23 @@ def upload_resumable(api_base, user_id, access_token, media_type, caption, uploa
     print(f"[instagram] Container ID: {container_id}")
     print(f"[instagram] Upload URI: {upload_uri}")
 
-    print(f"[instagram] Step 2: Uploading video binary directly...")
+    print(f"[instagram] Step 2: Uploading video binary...")
     with open(upload_path, 'rb') as f:
         video_data = f.read()
 
     upload_headers = {
         'Authorization': f'OAuth {access_token}',
-        'offset': '0',
-        'file_size': str(file_size),
         'Content-Type': 'application/octet-stream',
+        'Content-Length': str(file_size),
+        'Content-Range': f'bytes 0-{file_size - 1}/{file_size}',
     }
     upload_resp = requests.post(upload_uri, headers=upload_headers, data=video_data, timeout=600)
-    if upload_resp.status_code != 200:
+    if upload_resp.status_code not in (200, 201):
         error_msg = upload_resp.text[:500]
         raise Exception(f"Binary upload failed ({upload_resp.status_code}): {error_msg}")
     print(f"[instagram] Binary upload complete!")
 
-    print(f"[instagram] Step 3: Publishing immediately...")
+    print(f"[instagram] Step 3: Publishing...")
     publish_resp = requests.post(f"{api_base}/{user_id}/media_publish", params={
         'creation_id': container_id,
         'access_token': access_token,
@@ -118,38 +107,40 @@ def upload_resumable(api_base, user_id, access_token, media_type, caption, uploa
 
 
 def upload_via_url(api_base, user_id, access_token, media_type, caption, upload_path):
-    """Fallback: upload via GitHub raw URL (old method)."""
     repo = os.environ.get('GITHUB_REPOSITORY')
     token = os.environ.get('GITHUB_TOKEN')
     if not repo or not token:
         raise Exception("GITHUB_REPOSITORY or GITHUB_TOKEN not set")
 
-    print(f"[instagram] Fallback: uploading to GitHub raw content...")
-    h = {'Authorization': f'Bearer {token}', 'Accept': 'application/vnd.github+json'}
-    remote_path = 'output/temp/video.mp4'
-    branch = 'main'
-
+    print(f"[instagram] Uploading to tmpfiles.org...")
     with open(upload_path, 'rb') as f:
-        content_b64 = base64.b64encode(f.read()).decode()
+        upload_resp = requests.post(
+            'https://tmpfiles.org/api/v1/upload',
+            files={'file': (Path(upload_path).name, f)},
+            timeout=120
+        )
+    if upload_resp.status_code != 200:
+        # Try catbox.moe instead
+        print(f"[instagram] tmpfiles failed, trying catbox.moe...")
+        with open(upload_path, 'rb') as f:
+            upload_resp = requests.post(
+                'https://catbox.moe/user/api.php',
+                data={'reqtype': 'fileupload'},
+                files={'fileToUpload': (Path(upload_path).name, f)},
+                timeout=120
+            )
+        if upload_resp.status_code != 200:
+            raise Exception(f"File hosting failed")
+        video_url = upload_resp.text.strip()
+    else:
+        data = upload_resp.json()
+        video_url = data['data']['url'].replace('tmpfiles.org/', 'tmpfiles.org/dl/')
 
-    r = requests.get(f'https://api.github.com/repos/{repo}/contents/{remote_path}', headers=h)
-    sha = r.json().get('sha') if r.status_code == 200 else None
+    print(f"[instagram] Video URL: {video_url}")
 
-    data = {'message': f'temp video {int(time.time())}', 'content': content_b64, 'branch': branch}
-    if sha:
-        data['sha'] = sha
-
-    r2 = requests.put(f'https://api.github.com/repos/{repo}/contents/{remote_path}', headers=h, json=data)
-    if r2.status_code not in (200, 201):
-        raise Exception(f"GitHub upload failed ({r2.status_code})")
-
-    owner, name = repo.split('/')
-    video_url = f'https://raw.githubusercontent.com/{owner}/{name}/{branch}/{remote_path}'
-    print(f"[instagram] GitHub URL: {video_url}")
-
-    print(f"[instagram] Creating {media_type} container via URL...")
+    print(f"[instagram] Creating {media_type} container...")
     container_params = {'media_type': media_type, 'video_url': video_url, 'access_token': access_token}
-    if not (media_type == 'STORIES'):
+    if media_type != 'STORIES':
         container_params['caption'] = caption
 
     container_resp = requests.post(f"{api_base}/{user_id}/media", params=container_params, timeout=60)
@@ -192,15 +183,6 @@ def upload_via_url(api_base, user_id, access_token, media_type, caption, upload_
 
     media_id = publish_resp.json().get('id')
     print(f"[instagram] SUCCESS! Media ID: {media_id}")
-
-    # Cleanup temp file from GitHub
-    h2 = {'Authorization': f'Bearer {token}', 'Accept': 'application/vnd.github+json'}
-    r_clean = requests.get(f'https://api.github.com/repos/{repo}/contents/{remote_path}', headers=h2)
-    if r_clean.status_code == 200:
-        sha_clean = r_clean.json()['sha']
-        requests.delete(f'https://api.github.com/repos/{repo}/contents/{remote_path}',
-                        headers=h2, json={'message': 'cleanup', 'sha': sha_clean, 'branch': branch})
-
     return media_id
 
 
@@ -214,17 +196,17 @@ def upload_to_instagram(video_path, caption, is_story=False):
     duration = get_video_duration(video_path_obj)
     if duration:
         print(f"[instagram] Video duration: {duration:.1f}s")
-        max_story_duration = 61.0
-        if is_story and duration > max_story_duration:
-            print(f"[instagram] Skipping Stories upload — video is {duration:.1f}s (max {max_story_duration:.0f}s)")
-            return {'status': 'skipped', 'reason': f'Video too long for Stories ({duration:.1f}s > {max_story_duration:.0f}s)', 'platform': 'instagram'}
+        if is_story and duration > 61.0:
+            print(f"[instagram] Skipping Stories upload — video is {duration:.1f}s (max 61s)")
+            return {'status': 'skipped', 'reason': f'Video too long for Stories ({duration:.1f}s > 61s)', 'platform': 'instagram'}
     else:
         print("[instagram] Could not determine video duration, proceeding anyway")
 
-    converted_path = ensure_compatible_format(video_path_obj)
+    # Re-encode for Instagram compatibility
+    encoded_path = reencode_for_instagram(video_path_obj)
 
     print("\n" + "=" * 60)
-    print(f"INSTAGRAM {media_type} UPLOAD (Resumable + URL Fallback)")
+    print(f"INSTAGRAM {media_type} UPLOAD")
     print("=" * 60)
 
     access_token = os.getenv('INSTAGRAM_ACCESS_TOKEN') or os.getenv('FACEBOOK_ACCESS_TOKEN')
@@ -254,8 +236,6 @@ def upload_to_instagram(video_path, caption, is_story=False):
                         ig_id = ig_account.get('id')
                         if ig_id != user_id:
                             user_id = ig_id
-                else:
-                    print(f"[instagram] IG account fetch failed")
             else:
                 print(f"[instagram] Page fetch failed")
         except Exception as e:
@@ -267,23 +247,22 @@ def upload_to_instagram(video_path, caption, is_story=False):
 
     print(f"[instagram] Credentials loaded")
 
-    upload_path = Path(converted_path)
+    upload_path = Path(encoded_path)
     file_size_mb = upload_path.stat().st_size / (1024 * 1024)
-    print(f"[instagram] Video: {converted_path} ({file_size_mb:.2f} MB)")
+    print(f"[instagram] Video: {encoded_path} ({file_size_mb:.2f} MB)")
 
     caption_limited = caption[:2200] if len(caption) > 2200 else caption
     print(f"[instagram] Caption: {len(caption_limited)} chars")
 
     api_base = "https://graph.facebook.com/v21.0"
 
-    # Try resumable first, fall back to URL method
+    # Try resumable first, fallback to URL via tmpfiles
     try:
         media_id = upload_resumable(api_base, user_id, access_token, media_type, caption_limited, upload_path)
         return {'id': media_id, 'platform': 'instagram', 'status': 'success'}
     except Exception as e:
-        error_str = str(e)
-        print(f"[instagram] Resumable method failed: {error_str[:100]}")
-        print(f"[instagram] Falling back to URL-based upload method...")
+        print(f"[instagram] Resumable failed: {str(e)[:100]}")
+        print(f"[instagram] Falling back to URL via tmpfiles...")
         try:
             media_id = upload_via_url(api_base, user_id, access_token, media_type, caption_limited, upload_path)
             return {'id': media_id, 'platform': 'instagram', 'status': 'success'}
