@@ -15,14 +15,13 @@ def compress(p):
     path=Path(p); out=Path(tempfile.gettempdir())/"ig_out"/f"cmp_{path.stem}.mp4"
     out.parent.mkdir(parents=True,exist_ok=True)
     sz_mb=path.stat().st_size/1048576
-    # Graduated compression: try CRF 23 first, if still >15MB after, try CRF 26
-    for crf in [23, 26, 28]:
-        print(f"[ig] Compressing {sz_mb:.0f}MB -> 1080p CRF{crf}...")
+    if sz_mb<20: print(f"[ig] No compression ({sz_mb:.0f}MB)"); return str(path)
+    for crf in [23, 26, 28, 30]:
+        print(f"[ig] Compressing {sz_mb:.0f}MB -> CRF{crf}...")
         subprocess.run(['ffmpeg','-i',str(path),'-c:v','libx264','-preset','medium','-crf',str(crf),'-vf','scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2','-c:a','aac','-b:a','128k','-movflags','+faststart','-y',str(out)],capture_output=True,text=True,timeout=300)
-        ns=out.stat().st_size/1048576
-        b64mb=ns*1.37
-        print(f"[ig] CRF{crf}: {ns:.0f}MB (base64 ~{b64mb:.0f}MB)")
-        if b64mb<90: return str(out)  # GitHub limit is ~95MB for base64
+        ns=out.stat().st_size/1048576; b64=ns*1.37
+        print(f"[ig] CRF{crf}: {ns:.0f}MB (b64 ~{b64:.0f}MB)")
+        if b64<50: return str(out)
     return str(out)
 
 def upload_git(cp,repo,token):
@@ -33,7 +32,7 @@ def upload_git(cp,repo,token):
     data={'message':f'ig {int(time.time())}','content':b64,'branch':'main'}
     if sha: data['sha']=sha
     r2=requests.put(f'https://api.github.com/repos/{repo}/contents/{rp}',headers=h,json=data,timeout=120)
-    if r2.status_code not in (200,201): raise Exception(f"GitHub: {r2.status_code}")
+    if r2.status_code not in (200,201): raise Exception(f"GitHub: {r2.status_code} {r2.text[:80]}")
     o,n=repo.split('/'); return f'https://raw.githubusercontent.com/{o}/{n}/main/{rp}'
 
 def publish(uid,at,vurl,cap,media_type):
@@ -78,25 +77,24 @@ def upload_to_instagram(video_path, caption, is_story=False):
     sz=cp.stat().st_size; print(f"[ig] Final: {cp.name} ({sz/1048576:.0f}MB)")
     cap=caption[:2200] if len(caption)>2200 else caption; print(f"[ig] Caption: {len(cap)} chars")
 
-    # Try resumable first
-    try:
-        print(f"[ig] Method 1: Resumable...")
-        sp=requests.post(f"https://graph.facebook.com/v21.0/{uid}/media",params={'upload_type':'resumable','access_token':at,'media_type':media_type,'caption':cap,'file_size':sz},timeout=30)
-        if sp.status_code!=200: raise Exception(sp.json().get('error',{}).get('message','?'))
-        d=sp.json()
-        with open(cp,'rb') as f: data=f.read()
-        up=requests.post(d['uri'],headers={'Authorization':f'OAuth {at}','offset':'0','file_size':str(sz),'Content-Type':'application/octet-stream'},data=data,timeout=600)
-        if up.status_code==200:
-            pp=requests.post(f"https://graph.facebook.com/v21.0/{uid}/media_publish",params={'creation_id':d['id'],'access_token':at},timeout=60)
-            if pp.status_code==200: mid=pp.json()['id']; print(f"[ig] SUCCESS! Media ID: {mid}"); return {'id':mid,'status':'success'}
-        raise Exception("Upload failed")
-    except Exception as e: print(f"[ig] Resumable: {str(e)[:60]}")
+    for attempt in range(2):
+        try:
+            print(f"[ig] Resumable attempt {attempt+1}...")
+            sp=requests.post(f"https://graph.facebook.com/v21.0/{uid}/media",params={'upload_type':'resumable','access_token':at,'media_type':media_type,'caption':cap,'file_size':sz},timeout=30)
+            if sp.status_code!=200: raise Exception(sp.json().get('error',{}).get('message','?'))
+            d=sp.json()
+            with open(cp,'rb') as f: data=f.read()
+            up=requests.post(d['uri'],headers={'Authorization':f'OAuth {at}','offset':'0','file_size':str(sz),'Content-Type':'application/octet-stream'},data=data,timeout=600)
+            if up.status_code==200:
+                pp=requests.post(f"https://graph.facebook.com/v21.0/{uid}/media_publish",params={'creation_id':d['id'],'access_token':at},timeout=60)
+                if pp.status_code==200: mid=pp.json()['id']; print(f"[ig] SUCCESS! Media ID: {mid}"); return {'id':mid,'status':'success'}
+            raise Exception("Upload failed")
+        except Exception as e: print(f"[ig] Resumable {attempt+1}: {str(e)[:50]}")
 
-    # GitHub URL method (most reliable for 1080p)
     repo=os.environ.get('GITHUB_REPOSITORY'); token=os.environ.get('GITHUB_TOKEN')
     if repo and token:
         try:
-            print(f"[ig] Method 2: GitHub URL...")
+            print(f"[ig] GitHub URL...")
             vurl=upload_git(cp,repo,token); print(f"[ig] URL: {vurl}")
             mid=publish(uid,at,vurl,cap,media_type)
             return {'id':mid,'status':'success'}
