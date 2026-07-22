@@ -1,6 +1,7 @@
 import os
 import re
 import subprocess
+import tempfile
 import requests
 from pathlib import Path
 from dotenv import load_dotenv
@@ -23,6 +24,45 @@ def get_video_duration(video_path):
     return None
 
 
+def ensure_compatible_format(video_path):
+    path = Path(video_path)
+    temp_dir = Path(tempfile.gettempdir()) / "ig_convert"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    converted = temp_dir / f"converted_{path.stem}.mp4"
+
+    try:
+        result = subprocess.run(
+            ['ffprobe', '-v', 'error', '-select_streams', 'v:0',
+             '-show_entries', 'stream=codec_name',
+             '-of', 'default=noprint_wrappers=1:nokey=1', str(path)],
+            capture_output=True, text=True, timeout=15
+        )
+        codec = result.stdout.strip() if result.returncode == 0 else ""
+    except Exception:
+        codec = ""
+
+    if codec == "h264":
+        print(f"[instagram] Video already H.264, no conversion needed")
+        return str(path)
+
+    print(f"[instagram] Converting video (codec: {codec or 'unknown'}) to H.264...")
+    try:
+        subprocess.run(
+            ['ffmpeg', '-i', str(path), '-c:v', 'libx264', '-preset', 'fast',
+             '-crf', '23', '-c:a', 'aac', '-movflags', '+faststart',
+             '-y', str(converted)],
+            capture_output=True, text=True, timeout=300
+        )
+        print(f"[instagram] Converted to: {converted}")
+        return str(converted)
+    except subprocess.TimeoutExpired:
+        print(f"[instagram] Conversion timed out, using original")
+        return str(path)
+    except Exception as e:
+        print(f"[instagram] Conversion failed ({e}), using original")
+        return str(path)
+
+
 def upload_to_instagram(video_path, caption, is_story=False):
     media_type = 'STORIES' if is_story else 'REELS'
 
@@ -39,6 +79,8 @@ def upload_to_instagram(video_path, caption, is_story=False):
             return {'status': 'skipped', 'reason': f'Video too long for Stories ({duration:.1f}s > {max_story_duration:.0f}s)', 'platform': 'instagram'}
     else:
         print("[instagram] Could not determine video duration, proceeding anyway")
+
+    converted_path = ensure_compatible_format(video_path_obj)
 
     print("\n" + "=" * 60)
     print(f"INSTAGRAM {media_type} UPLOAD (Resumable Method)")
@@ -97,9 +139,10 @@ def upload_to_instagram(video_path, caption, is_story=False):
 
     print(f"[instagram] Credentials loaded")
 
-    file_size = video_path_obj.stat().st_size
+    upload_path = Path(converted_path)
+    file_size = upload_path.stat().st_size
     file_size_mb = file_size / (1024 * 1024)
-    print(f"[instagram] Video: {video_path} ({file_size_mb:.2f} MB)")
+    print(f"[instagram] Video: {converted_path} ({file_size_mb:.2f} MB)")
 
     caption_limited = caption[:2200] if len(caption) > 2200 else caption
     print(f"[instagram] Caption: {len(caption_limited)} chars")
@@ -128,7 +171,7 @@ def upload_to_instagram(video_path, caption, is_story=False):
         print(f"[instagram] Upload URI: {upload_uri}")
 
         print(f"[instagram] Step 2: Uploading video binary directly...")
-        with open(video_path_obj, 'rb') as f:
+        with open(upload_path, 'rb') as f:
             video_data = f.read()
 
         upload_headers = {
@@ -138,9 +181,9 @@ def upload_to_instagram(video_path, caption, is_story=False):
             'Content-Type': 'application/octet-stream',
         }
 
-        upload_resp = requests.post(upload_uri, headers=upload_headers, data=video_data, timeout=300)
+        upload_resp = requests.post(upload_uri, headers=upload_headers, data=video_data, timeout=600)
         if upload_resp.status_code != 200:
-            error_msg = upload_resp.text[:300]
+            error_msg = upload_resp.text[:500]
             raise Exception(f"Binary upload failed ({upload_resp.status_code}): {error_msg}")
         print(f"[instagram] Binary upload complete!")
 
