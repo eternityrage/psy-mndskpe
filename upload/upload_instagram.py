@@ -1,178 +1,97 @@
-import os
-import requests
+import os, requests, subprocess, time
 from pathlib import Path
 from dotenv import load_dotenv
 
 env_path = Path(__file__).parent.parent / '.env'
 load_dotenv(dotenv_path=env_path, override=True)
 
-
-
-import subprocess
 def get_video_duration(video_path):
     try:
-        result = subprocess.run(
-            ['ffprobe', '-v', 'error', '-show_entries', 'format=duration',
-             '-of', 'default=noprint_wrappers=1:nokey=1', str(video_path)],
-            capture_output=True, text=True, timeout=30
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            return float(result.stdout.strip())
-    except Exception:
-        pass
+        r = subprocess.run(['ffprobe','-v','error','-show_entries','format=duration','-of','default=noprint_wrappers=1:nokey=1',str(video_path)],capture_output=True,text=True,timeout=30)
+        if r.returncode == 0 and r.stdout.strip():
+            return float(r.stdout.strip())
+    except: pass
     return None
 
 def upload_to_instagram(video_path, caption, is_story=False):
-'"@
-
-# Add duration check after the user_id check and before credentials loaded
-$withDuration = $withDuration -replace '(?s)(print\(f"\[instagram\] Credentials loaded"\))', @'
-    video_path_obj = Path(video_path)
-    if not video_path_obj.exists():
-        raise FileNotFoundError(f"Video not found: {video_path}")
-    duration = get_video_duration(video_path_obj)
-    if duration:
-        print(f"[instagram] Video duration: {duration:.1f}s")
-        if is_story and duration > 61.0:
-            print(f"[instagram] Skipping Stories upload - video is {duration:.1f}s (max 61s)")
-            return {'status': 'skipped', 'reason': f'Video too long for Stories', 'platform': 'instagram'}
-    print(f"[instagram] Credentials loaded")
     media_type = 'STORIES' if is_story else 'REELS'
-
-    print("\n" + "=" * 60)
+    print("\n" + "="*60)
     print(f"INSTAGRAM {media_type} UPLOAD (Resumable Method)")
-    print("=" * 60)
+    print("="*60)
 
     access_token = os.getenv('INSTAGRAM_ACCESS_TOKEN') or os.getenv('FACEBOOK_ACCESS_TOKEN')
     user_id = os.getenv('INSTAGRAM_ACCOUNT_ID') or os.getenv('IG_USER_ID')
 
-    def mask(s):
-        return f"{s[:10]}...{s[-4:]}" if s and len(s) > 10 else ("PLACEHOLDER" if s == "***" else "MISSING")
-
+    def mask(s): return f"{s[:10]}...{s[-4:]}" if s and len(s)>10 else ("PLACEHOLDER" if s=="***" else "MISSING")
     print(f"[instagram] User ID Provided: {user_id}")
     print(f"[instagram] Access Token: {mask(access_token)}")
 
     if not access_token:
         print("[instagram] Skipping - no token")
-        return {'status': 'skipped', 'reason': 'Missing credentials', 'platform': 'instagram'}
+        return {'status':'skipped','reason':'Missing credentials','platform':'instagram'}
 
     if access_token.startswith('EAAM'):
         print("[instagram] EAAM token detected, resolving Instagram Business Account ID...")
         try:
-            me_resp = requests.get(f"https://graph.facebook.com/me?fields=id,name&access_token={access_token}", timeout=10)
-            if me_resp.status_code == 200:
-                page_id = me_resp.json().get('id')
-                print(f"[instagram] Facebook Page ID: {page_id}")
-                ig_resp = requests.get(f"https://graph.facebook.com/{page_id}?fields=instagram_business_account&access_token={access_token}", timeout=10)
-                if ig_resp.status_code == 200:
-                    ig_account = ig_resp.json().get('instagram_business_account')
-                    if ig_account:
-                        ig_id = ig_account.get('id')
-                        if ig_id != user_id:
-                            print(f"[instagram] Found IG Business Account: {ig_id} (was: {user_id})")
-                            user_id = ig_id
-                    else:
-                        print("[instagram] No Instagram Business Account connected to this Page")
-                else:
-                    print(f"[instagram] IG account fetch failed: {ig_resp.text[:200]}")
-            else:
-                print(f"[instagram] Page fetch failed: {me_resp.text[:200]}")
-        except Exception as e:
-            print(f"[instagram] IG ID fetch error: {e}")
-    elif access_token.startswith('IGAA'):
-        try:
-            me_resp = requests.get(f"https://graph.facebook.com/me?fields=id,username&access_token={access_token}", timeout=10)
-            if me_resp.status_code == 200:
-                detected_id = me_resp.json().get('id')
-                if detected_id and detected_id != user_id:
-                    print(f"[instagram] Using detected ID: {detected_id}")
-                    user_id = detected_id
-        except Exception as e:
-            print(f"[instagram] ID verify error: {e}")
+            me = requests.get(f"https://graph.facebook.com/me?fields=id,name&access_token={access_token}",timeout=10)
+            if me.status_code==200:
+                pid = me.json().get('id')
+                ig = requests.get(f"https://graph.facebook.com/{pid}?fields=instagram_business_account&access_token={access_token}",timeout=10)
+                if ig.status_code==200:
+                    acct = ig.json().get('instagram_business_account')
+                    if acct: user_id = acct.get('id')
+        except: pass
 
     if not user_id:
         print("[instagram] Skipping - no user ID")
-        return {'status': 'skipped', 'reason': 'Missing credentials', 'platform': 'instagram'}
+        return {'status':'skipped','reason':'Missing credentials','platform':'instagram'}
 
     print(f"[instagram] Credentials loaded")
 
-    video_path_obj = Path(video_path)
+    p = Path(video_path)
+    if not p.exists():
         raise FileNotFoundError(f"Video not found: {video_path}")
 
-    file_size = video_path_obj.stat().st_size
-    file_size_mb = file_size / (1024 * 1024)
-    print(f"[instagram] Video: {video_path} ({file_size_mb:.2f} MB)")
+    dur = get_video_duration(p)
+    if dur:
+        print(f"[instagram] Video duration: {dur:.1f}s")
+        if is_story and dur > 61.0:
+            print(f"[instagram] Skipping Stories upload - video is {dur:.1f}s (max 61s)")
+            return {'status':'skipped','reason':'Video too long for Stories','platform':'instagram'}
 
-    caption_limited = caption[:2200] if len(caption) > 2200 else caption
-    print(f"[instagram] Caption: {len(caption_limited)} chars")
+    sz = p.stat().st_size
+    print(f"[instagram] Video: {p} ({sz/1024/1024:.2f} MB)")
+    cap = caption[:2200] if len(caption)>2200 else caption
+    print(f"[instagram] Caption: {len(cap)} chars")
 
+    api_base = "https://graph.facebook.com/v21.0"
     try:
-        api_base = "https://graph.facebook.com/v21.0"
-
         print(f"[instagram] Step 1: Starting resumable upload session...")
-        session_params = {
-            'upload_type': 'resumable',
-            'access_token': access_token,
-            'media_type': media_type,
-            'caption': caption_limited,
-            'file_size': file_size,
-        }
-
-        session_resp = requests.post(f"{api_base}/{user_id}/media", params=session_params, timeout=30)
-        if session_resp.status_code != 200:
-            error_msg = session_resp.json().get('error', {}).get('message', 'Unknown')
-            raise Exception(f"Session creation failed: {error_msg}")
-
-        session_data = session_resp.json()
-        container_id = session_data.get('id')
-        upload_uri = session_data.get('uri')
-        print(f"[instagram] Container ID: {container_id}")
-        print(f"[instagram] Upload URI: {upload_uri}")
+        sp = requests.post(f"{api_base}/{user_id}/media",params={'upload_type':'resumable','access_token':access_token,'media_type':media_type,'caption':cap,'file_size':sz},timeout=30)
+        if sp.status_code!=200: raise Exception(f"Session failed: {sp.json().get('error',{}).get('message','Unknown')}")
+        d = sp.json()
+        cid, uri = d.get('id'), d.get('uri')
+        print(f"[instagram] Container ID: {cid}")
+        print(f"[instagram] Upload URI: {uri}")
 
         print(f"[instagram] Step 2: Uploading video binary directly...")
-        with open(video_path_obj, 'rb') as f:
-            video_data = f.read()
-
-        upload_headers = {
-            'Authorization': f'OAuth {access_token}',
-            'offset': '0',
-            'file_size': str(file_size),
-            'Content-Type': 'application/octet-stream',
-        }
-
-        upload_resp = requests.post(upload_uri, headers=upload_headers, data=video_data, timeout=300)
-        if upload_resp.status_code != 200:
-            error_msg = upload_resp.text[:300]
-            raise Exception(f"Binary upload failed ({upload_resp.status_code}): {error_msg}")
+        with open(p,'rb') as f: data = f.read()
+        up = requests.post(uri,headers={'Authorization':f'OAuth {access_token}','offset':'0','file_size':str(sz),'Content-Type':'application/octet-stream'},data=data,timeout=600)
+        if up.status_code!=200: raise Exception(f"Binary upload failed ({up.status_code})")
         print(f"[instagram] Binary upload complete!")
 
         print(f"[instagram] Step 3: Publishing immediately...")
-        publish_resp = requests.post(f"{api_base}/{user_id}/media_publish", params={
-            'creation_id': container_id,
-            'access_token': access_token,
-        }, timeout=60)
-
-        if publish_resp.status_code != 200:
-            error_msg = publish_resp.json().get('error', {}).get('message', 'Unknown')
-            raise Exception(f"Publish failed: {error_msg}")
-
-        media_id = publish_resp.json().get('id')
-        print(f"[instagram] SUCCESS! Media ID: {media_id}")
-
-        return {'id': media_id, 'platform': 'instagram', 'status': 'success'}
-
+        pp = requests.post(f"{api_base}/{user_id}/media_publish",params={'creation_id':cid,'access_token':access_token},timeout=60)
+        if pp.status_code!=200: raise Exception(f"Publish failed: {pp.json().get('error',{}).get('message','Unknown')}")
+        mid = pp.json().get('id')
+        print(f"[instagram] SUCCESS! Media ID: {mid}")
+        return {'id':mid,'platform':'instagram','status':'success'}
     except Exception as e:
         print(f"[instagram] ERROR: {e}")
         raise
 
-
-if __name__ == '__main__':
-    video_file = Path('final_video.mp4')
-    if video_file.exists():
-        try:
-            result = upload_to_instagram(str(video_file), "Test")
-            print(f"Result: {result}")
-        except Exception as e:
-            print(f"Failed: {e}")
-    else:
-        print(f"Video not found: {video_file}")
+if __name__=='__main__':
+    f=Path('final_video.mp4')
+    if f.exists():
+        try: print(upload_to_instagram(str(f),"Test"))
+        except Exception as e: print(f"Failed: {e}")
