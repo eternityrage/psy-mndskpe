@@ -6,36 +6,36 @@ load_dotenv(dotenv_path=env_path, override=True)
 
 def get_dur(p):
     try:
-        r = subprocess.run(['ffprobe','-v','error','-show_entries','format=duration','-of','default=noprint_wrappers=1:nokey=1',str(p)],capture_output=True,text=True,timeout=30)
+        r=subprocess.run(['ffprobe','-v','error','-show_entries','format=duration','-of','default=noprint_wrappers=1:nokey=1',str(p)],capture_output=True,text=True,timeout=30)
         if r.returncode==0 and r.stdout.strip(): return float(r.stdout.strip())
     except: pass
     return None
 
 def compress(p):
-    path = Path(p)
-    out = Path(tempfile.gettempdir()) / "ig_out" / f"cmp_{path.stem}.mp4"
+    path=Path(p)
+    out=Path(tempfile.gettempdir())/"ig_out"/f"cmp_{path.stem}.mp4"
     out.parent.mkdir(parents=True,exist_ok=True)
-    sz_mb = path.stat().st_size / 1048576
-    if sz_mb < 25:
-        print(f"[ig] Video already {sz_mb:.0f}MB, skipping compress")
+    sz_mb=path.stat().st_size/1048576
+    if sz_mb<25:
+        print(f"[ig] Video already {sz_mb:.0f}MB, no compression needed")
         return str(path)
-    print(f"[ig] Compressing {sz_mb:.0f}MB -> target <25MB...")
+    print(f"[ig] Compressing {sz_mb:.0f}MB while keeping 1080p quality...")
     try:
-        subprocess.run(['ffmpeg','-i',str(path),'-c:v','libx264','-preset','fast','-crf','28','-vf','scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2','-c:a','aac','-b:a','64k','-movflags','+faststart','-y',str(out)],capture_output=True,text=True,timeout=300)
-        ns = out.stat().st_size/1048576
-        print(f"[ig] Compressed to {ns:.0f}MB")
+        subprocess.run(['ffmpeg','-i',str(path),'-c:v','libx264','-preset','medium','-crf','23','-vf','scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2','-c:a','aac','-b:a','128k','-movflags','+faststart','-y',str(out)],capture_output=True,text=True,timeout=300)
+        ns=out.stat().st_size/1048576
+        print(f"[ig] Compressed to {ns:.0f}MB (1080p, 128k audio)")
         return str(out)
     except Exception as e:
         print(f"[ig] Compress failed: {e}, using original")
         return str(p)
 
 def upload_to_instagram(video_path, caption, is_story=False):
-    media_type = 'STORIES' if is_story else 'REELS'
-    print("\n"+ "="*60)
+    media_type='STORIES' if is_story else 'REELS'
+    print("\n"+"="*60)
     print(f"INSTAGRAM {media_type} UPLOAD")
     print("="*60)
-    at = os.getenv('INSTAGRAM_ACCESS_TOKEN') or os.getenv('FACEBOOK_ACCESS_TOKEN')
-    uid = os.getenv('INSTAGRAM_ACCOUNT_ID') or os.getenv('IG_USER_ID')
+    at=os.getenv('INSTAGRAM_ACCESS_TOKEN') or os.getenv('FACEBOOK_ACCESS_TOKEN')
+    uid=os.getenv('INSTAGRAM_ACCOUNT_ID') or os.getenv('IG_USER_ID')
     print(f"[ig] Token: {'SET' if at else 'MISSING'} | User: {uid}")
     if not at or not uid: return {'status':'skipped','platform':'instagram'}
     if at.startswith('EAAM'):
@@ -61,7 +61,7 @@ def upload_to_instagram(video_path, caption, is_story=False):
     cap=caption[:2200] if len(caption)>2200 else caption
     print(f"[ig] Caption: {len(cap)} chars")
 
-    # Method 1: Try resumable first
+    # Method 1: Resumable upload
     try:
         print(f"[ig] Method 1: Resumable upload...")
         sp=requests.post(f"https://graph.facebook.com/v21.0/{uid}/media",params={'upload_type':'resumable','access_token':at,'media_type':media_type,'caption':cap,'file_size':sz},timeout=30)
@@ -119,7 +119,6 @@ def upload_to_instagram(video_path, caption, is_story=False):
         if pp.status_code!=200: raise Exception(f"Publish failed")
         mid=pp.json().get('id')
         print(f"[ig] SUCCESS! Media ID: {mid}")
-        # Cleanup
         requests.delete(f'https://api.github.com/repos/{repo}/contents/{rp}',headers=h,json={'message':'cleanup','sha':sha,'branch':branch})
         return {'id':mid,'platform':'instagram','status':'success'}
     except Exception as e:
