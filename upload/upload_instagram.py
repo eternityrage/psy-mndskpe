@@ -15,10 +15,15 @@ def compress(p):
     path=Path(p); out=Path(tempfile.gettempdir())/"ig_out"/f"cmp_{path.stem}.mp4"
     out.parent.mkdir(parents=True,exist_ok=True)
     sz_mb=path.stat().st_size/1048576
-    if sz_mb<25: print(f"[ig] No compression ({sz_mb:.0f}MB)"); return str(path)
-    print(f"[ig] Compressing {sz_mb:.0f}MB -> 1080p 128k...")
-    subprocess.run(['ffmpeg','-i',str(path),'-c:v','libx264','-preset','medium','-crf','23','-vf','scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2','-c:a','aac','-b:a','128k','-movflags','+faststart','-y',str(out)],capture_output=True,text=True,timeout=300)
-    ns=out.stat().st_size/1048576; print(f"[ig] Compressed: {ns:.0f}MB (1080p 128k)"); return str(out)
+    # Graduated compression: try CRF 23 first, if still >15MB after, try CRF 26
+    for crf in [23, 26, 28]:
+        print(f"[ig] Compressing {sz_mb:.0f}MB -> 1080p CRF{crf}...")
+        subprocess.run(['ffmpeg','-i',str(path),'-c:v','libx264','-preset','medium','-crf',str(crf),'-vf','scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2','-c:a','aac','-b:a','128k','-movflags','+faststart','-y',str(out)],capture_output=True,text=True,timeout=300)
+        ns=out.stat().st_size/1048576
+        b64mb=ns*1.37
+        print(f"[ig] CRF{crf}: {ns:.0f}MB (base64 ~{b64mb:.0f}MB)")
+        if b64mb<90: return str(out)  # GitHub limit is ~95MB for base64
+    return str(out)
 
 def upload_git(cp,repo,token):
     rp='output/temp/ig_video.mp4'; h={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json'}
@@ -31,17 +36,6 @@ def upload_git(cp,repo,token):
     if r2.status_code not in (200,201): raise Exception(f"GitHub: {r2.status_code}")
     o,n=repo.split('/'); return f'https://raw.githubusercontent.com/{o}/{n}/main/{rp}'
 
-def upload_host(cp):
-    with open(cp,'rb') as f: data=f.read(); name=Path(cp).name
-    for url in ['https://temp.sh/upload','https://0x0.st','https://file.io']:
-        try:
-            r=requests.post(url,files={'file':(name,data)},timeout=120)
-            if r.status_code==200:
-                txt=r.text.strip()
-                if txt.startswith('http'): return txt
-        except: pass
-    raise Exception("All hosts failed")
-
 def publish(uid,at,vurl,cap,media_type):
     base="https://graph.facebook.com/v21.0"
     p={'media_type':media_type,'video_url':vurl,'access_token':at}
@@ -49,15 +43,14 @@ def publish(uid,at,vurl,cap,media_type):
     cr=requests.post(f"{base}/{uid}/media",params=p,timeout=60)
     if cr.status_code not in (200,201): raise Exception(f"Container: {cr.text[:200]}")
     cid=cr.json().get('id'); print(f"[ig] Container: {cid}")
-    waited=0; max_wait=300
-    while waited<max_wait:
+    waited=0
+    while waited<300:
         sr=requests.get(f"{base}/{cid}",params={'fields':'status_code,status','access_token':at},timeout=30).json()
-        sc=sr.get('status_code') or sr.get('status','UNKNOWN')
-        print(f"[ig] Status: {sc} ({waited}s)")
+        sc=sr.get('status_code') or sr.get('status','UNKNOWN'); print(f"[ig] Status: {sc} ({waited}s)")
         if sc in ('FINISHED','FINISH'): break
         elif sc=='ERROR': raise Exception(sr.get('error_message','?'))
         time.sleep(30); waited+=30
-    if waited>=max_wait: raise Exception("Timed out")
+    if waited>=300: raise Exception("Timed out")
     pp=requests.post(f"{base}/{uid}/media_publish",params={'creation_id':cid,'access_token':at},timeout=60)
     if pp.status_code!=200: raise Exception(f"Publish: {pp.text[:200]}")
     mid=pp.json().get('id'); print(f"[ig] SUCCESS! Media ID: {mid}"); return mid
@@ -82,10 +75,10 @@ def upload_to_instagram(video_path, caption, is_story=False):
         print(f"[ig] Duration: {dur:.0f}s")
         if is_story and dur>61: print(f"[ig] Skipping Stories"); return {'status':'skipped','reason':'duration'}
     compressed=compress(p); cp=Path(compressed)
-    sz=cp.stat().st_size; print(f"[ig] Video: {cp.name} ({sz/1048576:.0f}MB)")
+    sz=cp.stat().st_size; print(f"[ig] Final: {cp.name} ({sz/1048576:.0f}MB)")
     cap=caption[:2200] if len(caption)>2200 else caption; print(f"[ig] Caption: {len(cap)} chars")
 
-    # Method 1: Resumable
+    # Try resumable first
     try:
         print(f"[ig] Method 1: Resumable...")
         sp=requests.post(f"https://graph.facebook.com/v21.0/{uid}/media",params={'upload_type':'resumable','access_token':at,'media_type':media_type,'caption':cap,'file_size':sz},timeout=30)
@@ -97,29 +90,18 @@ def upload_to_instagram(video_path, caption, is_story=False):
             pp=requests.post(f"https://graph.facebook.com/v21.0/{uid}/media_publish",params={'creation_id':d['id'],'access_token':at},timeout=60)
             if pp.status_code==200: mid=pp.json()['id']; print(f"[ig] SUCCESS! Media ID: {mid}"); return {'id':mid,'status':'success'}
         raise Exception("Upload failed")
-    except Exception as e: print(f"[ig] Resumable failed: {str(e)[:60]}")
+    except Exception as e: print(f"[ig] Resumable: {str(e)[:60]}")
 
-    # Method 2: Host + URL
-    errs=[]
-    for host_name in ['temp.sh', '0x0.st', 'file.io']:
+    # GitHub URL method (most reliable for 1080p)
+    repo=os.environ.get('GITHUB_REPOSITORY'); token=os.environ.get('GITHUB_TOKEN')
+    if repo and token:
         try:
-            print(f"[ig] Method 2: {host_name}...")
-            vurl=upload_host(cp); print(f"[ig] URL: {vurl}")
-            mid=publish(uid,at,vurl,cap,media_type)
-            return {'id':mid,'status':'success'}
-        except Exception as e: errs.append(str(e)[:60]); print(f"[ig] {host_name} failed")
-    
-    # Method 3: GitHub URL (if available)
-    try:
-        repo=os.environ.get('GITHUB_REPOSITORY'); token=os.environ.get('GITHUB_TOKEN')
-        if repo and token:
-            print(f"[ig] Method 3: GitHub URL...")
+            print(f"[ig] Method 2: GitHub URL...")
             vurl=upload_git(cp,repo,token); print(f"[ig] URL: {vurl}")
             mid=publish(uid,at,vurl,cap,media_type)
             return {'id':mid,'status':'success'}
-    except Exception as e: print(f"[ig] GitHub failed: {str(e)[:60]}")
-
-    raise Exception(f"All failed: {'; '.join(errs)}")
+        except Exception as e: print(f"[ig] GitHub: {str(e)[:60]}")
+    raise Exception("All methods failed")
 
 if __name__=='__main__':
     f=Path('final_video.mp4')
