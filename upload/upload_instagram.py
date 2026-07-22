@@ -17,49 +17,18 @@ def compress(p):
     sz_mb=path.stat().st_size/1048576
     if sz_mb<20: print(f"[ig] No compression ({sz_mb:.0f}MB)"); return str(path)
     for crf in [23, 26, 28, 30]:
-        print(f"[ig] Compressing {sz_mb:.0f}MB -> CRF{crf}...")
+        print(f"[ig] Compress CRF{crf}...")
         subprocess.run(['ffmpeg','-i',str(path),'-c:v','libx264','-preset','medium','-crf',str(crf),'-vf','scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2','-c:a','aac','-b:a','128k','-movflags','+faststart','-y',str(out)],capture_output=True,text=True,timeout=300)
-        ns=out.stat().st_size/1048576; b64=ns*1.37
-        print(f"[ig] CRF{crf}: {ns:.0f}MB (b64 ~{b64:.0f}MB)")
-        if b64<50: return str(out)
+        ns=out.stat().st_size/1048576
+        print(f"[ig] CRF{crf}: {ns:.0f}MB")
+        if ns*1.37<25: return str(out)
     return str(out)
-
-def upload_git(cp,repo,token):
-    rp='output/temp/ig_video.mp4'; h={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json'}
-    with open(cp,'rb') as f: b64=base64.b64encode(f.read()).decode()
-    r=requests.get(f'https://api.github.com/repos/{repo}/contents/{rp}',headers=h)
-    sha=r.json().get('sha') if r.status_code==200 else None
-    data={'message':f'ig {int(time.time())}','content':b64,'branch':'main'}
-    if sha: data['sha']=sha
-    r2=requests.put(f'https://api.github.com/repos/{repo}/contents/{rp}',headers=h,json=data,timeout=120)
-    if r2.status_code not in (200,201): raise Exception(f"GitHub: {r2.status_code} {r2.text[:80]}")
-    o,n=repo.split('/'); return f'https://raw.githubusercontent.com/{o}/{n}/main/{rp}'
-
-def publish(uid,at,vurl,cap,media_type):
-    base="https://graph.facebook.com/v21.0"
-    p={'media_type':media_type,'video_url':vurl,'access_token':at}
-    if media_type!='STORIES': p['caption']=cap
-    cr=requests.post(f"{base}/{uid}/media",params=p,timeout=60)
-    if cr.status_code not in (200,201): raise Exception(f"Container: {cr.text[:200]}")
-    cid=cr.json().get('id'); print(f"[ig] Container: {cid}")
-    waited=0
-    while waited<300:
-        sr=requests.get(f"{base}/{cid}",params={'fields':'status_code,status','access_token':at},timeout=30).json()
-        sc=sr.get('status_code') or sr.get('status','UNKNOWN'); print(f"[ig] Status: {sc} ({waited}s)")
-        if sc in ('FINISHED','FINISH'): break
-        elif sc=='ERROR': raise Exception(sr.get('error_message','?'))
-        time.sleep(30); waited+=30
-    if waited>=300: raise Exception("Timed out")
-    pp=requests.post(f"{base}/{uid}/media_publish",params={'creation_id':cid,'access_token':at},timeout=60)
-    if pp.status_code!=200: raise Exception(f"Publish: {pp.text[:200]}")
-    mid=pp.json().get('id'); print(f"[ig] SUCCESS! Media ID: {mid}"); return mid
 
 def upload_to_instagram(video_path, caption, is_story=False):
     media_type='STORIES' if is_story else 'REELS'
-    print("\n"+"="*60); print(f"INSTAGRAM {media_type} UPLOAD"); print("="*60)
+    print(f"\nINSTAGRAM {media_type} UPLOAD (GitHub URL)")
     at=os.getenv('INSTAGRAM_ACCESS_TOKEN') or os.getenv('FACEBOOK_ACCESS_TOKEN')
     uid=os.getenv('INSTAGRAM_ACCOUNT_ID') or os.getenv('IG_USER_ID')
-    print(f"[ig] Token: {'SET' if at else 'MISSING'}")
     if not at or not uid: return {'status':'skipped'}
     if at.startswith('EAAM'):
         try:
@@ -75,31 +44,47 @@ def upload_to_instagram(video_path, caption, is_story=False):
         if is_story and dur>61: print(f"[ig] Skipping Stories"); return {'status':'skipped','reason':'duration'}
     compressed=compress(p); cp=Path(compressed)
     sz=cp.stat().st_size; print(f"[ig] Final: {cp.name} ({sz/1048576:.0f}MB)")
-    cap=caption[:2200] if len(caption)>2200 else caption; print(f"[ig] Caption: {len(cap)} chars")
+    cap=caption[:2200] if len(caption)>2200 else caption
 
-    for attempt in range(2):
-        try:
-            print(f"[ig] Resumable attempt {attempt+1}...")
-            sp=requests.post(f"https://graph.facebook.com/v21.0/{uid}/media",params={'upload_type':'resumable','access_token':at,'media_type':media_type,'caption':cap,'file_size':sz},timeout=30)
-            if sp.status_code!=200: raise Exception(sp.json().get('error',{}).get('message','?'))
-            d=sp.json()
-            with open(cp,'rb') as f: data=f.read()
-            up=requests.post(d['uri'],headers={'Authorization':f'OAuth {at}','offset':'0','file_size':str(sz),'Content-Type':'application/octet-stream'},data=data,timeout=600)
-            if up.status_code==200:
-                pp=requests.post(f"https://graph.facebook.com/v21.0/{uid}/media_publish",params={'creation_id':d['id'],'access_token':at},timeout=60)
-                if pp.status_code==200: mid=pp.json()['id']; print(f"[ig] SUCCESS! Media ID: {mid}"); return {'id':mid,'status':'success'}
-            raise Exception("Upload failed")
-        except Exception as e: print(f"[ig] Resumable {attempt+1}: {str(e)[:50]}")
-
+    # API 1: Upload to GitHub
     repo=os.environ.get('GITHUB_REPOSITORY'); token=os.environ.get('GITHUB_TOKEN')
-    if repo and token:
-        try:
-            print(f"[ig] GitHub URL...")
-            vurl=upload_git(cp,repo,token); print(f"[ig] URL: {vurl}")
-            mid=publish(uid,at,vurl,cap,media_type)
+    if not repo or not token: raise Exception("No GITHUB_TOKEN")
+    rp='output/temp/ig_video.mp4'; h={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json'}
+    with open(cp,'rb') as f: b64=base64.b64encode(f.read()).decode()
+    r=requests.get(f'https://api.github.com/repos/{repo}/contents/{rp}',headers=h)
+    sha=r.json().get('sha') if r.status_code==200 else None
+    data={'message':f'ig {int(time.time())}','content':b64,'branch':'main'}
+    if sha: data['sha']=sha
+    r2=requests.put(f'https://api.github.com/repos/{repo}/contents/{rp}',headers=h,json=data,timeout=120)
+    if r2.status_code not in (200,201): raise Exception(f"GitHub upload failed")
+    o,n=repo.split('/')
+    vurl=f'https://raw.githubusercontent.com/{o}/{n}/main/{rp}'
+    print(f"[ig] URL: {vurl}")
+
+    # API 2: Create container
+    base="https://graph.facebook.com/v21.0"
+    cr=requests.post(f"{base}/{uid}/media",params={'media_type':media_type,'video_url':vurl,'caption':cap,'access_token':at},timeout=60)
+    if cr.status_code not in (200,201): raise Exception(f"Container failed")
+    cid=cr.json().get('id')
+    print(f"[ig] Container: {cid}")
+
+    # No polling - wait fixed time for Instagram to download
+    wait_time=90 if media_type!='STORIES' else 60
+    print(f"[ig] Waiting {wait_time}s for processing (no polling)...")
+    time.sleep(wait_time)
+
+    # API 3: Publish (try once, retry once if fails)
+    for attempt in range(2):
+        pp=requests.post(f"{base}/{uid}/media_publish",params={'creation_id':cid,'access_token':at},timeout=60)
+        if pp.status_code==200:
+            mid=pp.json().get('id')
+            print(f"[ig] SUCCESS! Media ID: {mid}")
+            # Cleanup GitHub temp file
+            requests.delete(f'https://api.github.com/repos/{repo}/contents/{rp}',headers=h,json={'message':'cleanup','sha':sha,'branch':'main'})
             return {'id':mid,'status':'success'}
-        except Exception as e: print(f"[ig] GitHub: {str(e)[:60]}")
-    raise Exception("All methods failed")
+        print(f"[ig] Publish attempt {attempt+1} failed, retrying in 30s...")
+        time.sleep(30)
+    raise Exception("Publish failed")
 
 if __name__=='__main__':
     f=Path('final_video.mp4')
