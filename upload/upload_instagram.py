@@ -1,4 +1,6 @@
 import os
+import re
+import subprocess
 import requests
 from pathlib import Path
 from dotenv import load_dotenv
@@ -7,8 +9,36 @@ env_path = Path(__file__).parent.parent / '.env'
 load_dotenv(dotenv_path=env_path, override=True)
 
 
+def get_video_duration(video_path):
+    try:
+        result = subprocess.run(
+            ['ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+             '-of', 'default=noprint_wrappers=1:nokey=1', str(video_path)],
+            capture_output=True, text=True, timeout=30
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return float(result.stdout.strip())
+    except Exception:
+        pass
+    return None
+
+
 def upload_to_instagram(video_path, caption, is_story=False):
     media_type = 'STORIES' if is_story else 'REELS'
+
+    video_path_obj = Path(video_path)
+    if not video_path_obj.exists():
+        raise FileNotFoundError(f"Video not found: {video_path}")
+
+    duration = get_video_duration(video_path_obj)
+    if duration:
+        print(f"[instagram] Video duration: {duration:.1f}s")
+        max_story_duration = 61.0
+        if is_story and duration > max_story_duration:
+            print(f"[instagram] Skipping Stories upload — video is {duration:.1f}s (max {max_story_duration:.0f}s)")
+            return {'status': 'skipped', 'reason': f'Video too long for Stories ({duration:.1f}s > {max_story_duration:.0f}s)', 'platform': 'instagram'}
+    else:
+        print("[instagram] Could not determine video duration, proceeding anyway")
 
     print("\n" + "=" * 60)
     print(f"INSTAGRAM {media_type} UPLOAD (Resumable Method)")
@@ -66,10 +96,6 @@ def upload_to_instagram(video_path, caption, is_story=False):
         return {'status': 'skipped', 'reason': 'Missing credentials', 'platform': 'instagram'}
 
     print(f"[instagram] Credentials loaded")
-
-    video_path_obj = Path(video_path)
-    if not video_path_obj.exists():
-        raise FileNotFoundError(f"Video not found: {video_path}")
 
     file_size = video_path_obj.stat().st_size
     file_size_mb = file_size / (1024 * 1024)
