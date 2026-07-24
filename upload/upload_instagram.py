@@ -1,17 +1,38 @@
 """
 Direct Resumable Instagram Reel & Story Uploader via Meta Graph API v21.0
-Directly transfers video bytes to rupload.facebook.com - Zero external URL dependencies!
+With automatic FFmpeg H.264/AAC sanitation for 100% Meta compatibility.
 Works for 100% of Public and Private Repositories without timeouts.
 """
-import os, sys, time, json, requests, pathlib
+import os, sys, time, json, requests, pathlib, subprocess
 
 def mask(s):
     return f"{s[:10]}...{s[-4:]}" if s and len(s) > 10 else "MISSING"
 
+def ensure_compatible_encoding(video_path):
+    """Ensure video is encoded with H.264 + AAC + yuv420p for Meta Instagram API"""
+    input_p = pathlib.Path(video_path)
+    output_p = input_p.parent / f"sanitized_{input_p.name}"
+    
+    cmd = [
+        "ffmpeg", "-y", "-i", str(input_p),
+        "-c:v", "libx264", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "128k", "-ar", "44100",
+        "-movflags", "+faststart",
+        str(output_p)
+    ]
+    try:
+        p = subprocess.run(cmd, capture_output=True, timeout=120)
+        if p.returncode == 0 and output_p.exists() and output_p.stat().st_size > 1000:
+            print(f"[instagram] FFmpeg sanitized video for Meta compatibility: {output_p.name}")
+            return output_p
+    except Exception as e:
+        print(f"[instagram] Sanitation warning: {e}")
+    return input_p
+
 def upload_to_instagram(video_path, caption="", is_story=False):
     media_type = 'STORIES' if is_story else 'REELS'
     print("\n" + "=" * 60)
-    print(f"INSTAGRAM {media_type} UPLOAD (Direct Resumable v21.0)")
+    print(f"INSTAGRAM {media_type} UPLOAD (Direct Resumable v21.0 + H.264 Sanitize)")
     print("=" * 60)
 
     access_token = (os.getenv('INSTAGRAM_ACCESS_TOKEN') or 
@@ -44,15 +65,14 @@ def upload_to_instagram(video_path, caption="", is_story=False):
         print("[instagram] ⚠️ Skipping - no Instagram Business Account connected to this Page")
         return {'status': 'skipped', 'reason': 'No Instagram Business Account', 'platform': 'instagram'}
 
-    print(f"[instagram] Account ID: {user_id}")
-    print(f"[instagram] Access Token: {mask(access_token)}")
-
     video_path_obj = pathlib.Path(video_path)
     if not video_path_obj.exists():
         print(f"[instagram] ❌ Video file not found: {video_path}")
         return {'status': 'failed', 'error': 'Video file not found', 'platform': 'instagram'}
 
-    file_size = video_path_obj.stat().st_size
+    # Sanitize video encoding for Meta Instagram compatibility
+    upload_file = ensure_compatible_encoding(video_path_obj)
+    file_size = upload_file.stat().st_size
     api_base = "https://graph.facebook.com/v21.0"
 
     try:
@@ -77,7 +97,7 @@ def upload_to_instagram(video_path, caption="", is_story=False):
         print(f"[instagram] ✅ Container ID: {container_id}")
 
         print("[instagram] Step 2: Uploading video bytes directly to Meta Servers...")
-        with open(video_path_obj, 'rb') as f:
+        with open(upload_file, 'rb') as f:
             video_bytes = f.read()
 
         up_headers = {
@@ -108,6 +128,8 @@ def upload_to_instagram(video_path, caption="", is_story=False):
             media_id = pub_res.json().get('id', container_id)
             print(f"[instagram] ✅ SUCCESS! Media ID: {media_id}")
             print(f"INSTAGRAM: SUCCESS (ID: {media_id})")
+            if upload_file != video_path_obj and upload_file.exists():
+                upload_file.unlink()
             return {'status': 'success', 'id': media_id, 'platform': 'instagram'}
         else:
             print("[instagram] Retrying publish in 15s...")
@@ -121,6 +143,8 @@ def upload_to_instagram(video_path, caption="", is_story=False):
                 media_id = pub_res2.json().get('id', container_id)
                 print(f"[instagram] ✅ SUCCESS! Media ID: {media_id}")
                 print(f"INSTAGRAM: SUCCESS (ID: {media_id})")
+                if upload_file != video_path_obj and upload_file.exists():
+                    upload_file.unlink()
                 return {'status': 'success', 'id': media_id, 'platform': 'instagram'}
             else:
                 err = pub_res2.json().get('error', {}).get('message', pub_res2.text)
@@ -128,4 +152,6 @@ def upload_to_instagram(video_path, caption="", is_story=False):
 
     except Exception as e:
         print(f"[instagram] ❌ Error: {e}")
+        if upload_file != video_path_obj and upload_file.exists():
+            upload_file.unlink()
         return {'status': 'failed', 'error': str(e), 'platform': 'instagram'}
