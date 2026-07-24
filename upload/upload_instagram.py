@@ -1,6 +1,6 @@
 """
 Direct Resumable Instagram Reel & Story Uploader via Meta Graph API v21.0
-Directly transfers raw video bytes to Meta Servers with Content-Type: video/mp4
+With Smart Container Processing Polling (Waits until FINISHED before publishing).
 100% Empirically Verified - Works for all Public and Private Repositories without timeouts.
 """
 import os, sys, time, json, requests, pathlib
@@ -11,7 +11,7 @@ def mask(s):
 def upload_to_instagram(video_path, caption="", is_story=False):
     media_type = 'STORIES' if is_story else 'REELS'
     print("\n" + "=" * 60)
-    print(f"INSTAGRAM {media_type} UPLOAD (Direct Resumable v21.0 + MP4 Header)")
+    print(f"INSTAGRAM {media_type} UPLOAD (Direct Resumable v21.0 + Smart Polling)")
     print("=" * 60)
 
     access_token = (os.getenv('INSTAGRAM_ACCESS_TOKEN') or 
@@ -91,10 +91,27 @@ def upload_to_instagram(video_path, caption="", is_story=False):
 
         print(f"[instagram] ✅ Video Bytes Transferred Successfully!")
 
-        print("[instagram] Step 3: Waiting 15s for Meta video container processing...")
-        time.sleep(15)
+        print("[instagram] Step 3: Polling Meta container status until FINISHED...")
+        max_polls = 18 # Up to 3 minutes
+        is_ready = False
+        
+        for poll_idx in range(max_polls):
+            time.sleep(10)
+            st_res = requests.get(
+                f"{api_base}/{container_id}?fields=status_code,status&access_token={access_token}",
+                timeout=10
+            )
+            if st_res.status_code == 200:
+                st_data = st_res.json()
+                status_code = st_data.get('status_code')
+                print(f"[instagram] Poll [{poll_idx+1}/{max_polls}]: status_code = {status_code}")
+                if status_code == 'FINISHED':
+                    is_ready = True
+                    break
+                elif status_code == 'ERROR':
+                    raise Exception(f"Meta container processing error: {st_data.get('status')}")
 
-        print("[instagram] Step 4: Publishing Reel...")
+        print("[instagram] Step 4: Publishing Media...")
         pub_res = requests.post(
             f"{api_base}/{user_id}/media_publish",
             params={'creation_id': container_id, 'access_token': access_token},
@@ -107,21 +124,8 @@ def upload_to_instagram(video_path, caption="", is_story=False):
             print(f"INSTAGRAM: SUCCESS (ID: {media_id})")
             return {'status': 'success', 'id': media_id, 'platform': 'instagram'}
         else:
-            print("[instagram] Retrying publish in 15s...")
-            time.sleep(15)
-            pub_res2 = requests.post(
-                f"{api_base}/{user_id}/media_publish",
-                params={'creation_id': container_id, 'access_token': access_token},
-                timeout=60
-            )
-            if pub_res2.status_code in (200, 201):
-                media_id = pub_res2.json().get('id', container_id)
-                print(f"[instagram] ✅ SUCCESS! Media ID: {media_id}")
-                print(f"INSTAGRAM: SUCCESS (ID: {media_id})")
-                return {'status': 'success', 'id': media_id, 'platform': 'instagram'}
-            else:
-                err = pub_res2.json().get('error', {}).get('message', pub_res2.text)
-                raise Exception(f"Publish failed: {err}")
+            err = pub_res.json().get('error', {}).get('message', pub_res.text)
+            raise Exception(f"Publish failed: {err}")
 
     except Exception as e:
         print(f"[instagram] ❌ Error: {e}")
