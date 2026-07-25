@@ -2830,5 +2830,21 @@
             },
             "recycled": true
         }
+    },
+    {
+        "video_name": "Avatar_Video_48_subtitled.mp4",
+        "metadata": {
+            "title": "The Attention Trap: Why Your Brain Skips What Matters (And How to Spot It)",
+            "description": "Have you ever noticed how you can miss something obvious right in front of you\u2014yet feel absolutely certain you \u201csaw it\u201d? In this video, we break down a powerful psychology concept that explains how attention works like a gatekeeper, filtering the world through limited mental resources and expectations. You\u2019ll learn how our brains use perception shortcuts, selective attention, and cognitive biases to decide what deserves processing\u2014often skipping the information that would change everything. As a psychology educator, I love showing you how these mechanisms shape real behavior, influence decisions, and even affect relationships and learning. Like if this psychology fact blew your mind! Comment your thoughts on this concept! Share this with someone who loves learning! Follow Psychology Mindscape for daily mind-expanding lessons! #psychology #brain #neuroscience #mentalhealth #psychologyfacts #mindset #selfimprovement #learning #science #behavioralscience #education #personalgrowth #cognitivebias #humanbehavior",
+            "success_flags": {
+                "instagram_reel": true,
+                "instagram_story": true,
+                "facebook_reel": true,
+                "facebook_story": false,
+                "threads": false,
+                "youtube": false
+            },
+            "recycled": true
+        }
     }
 ]
