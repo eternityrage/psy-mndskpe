@@ -4414,5 +4414,21 @@
             },
             "recycled": true
         }
+    },
+    {
+        "video_name": "Avatar_Video_42_subtitled.mp4",
+        "metadata": {
+            "title": "The Invisible Half-Second: How Your Brain Predicts the World (and Why That Changes Your Reality)",
+            "description": "Have you ever wondered why the world feels so steady and \u201creal\u201d when your brain is actually building it moment by moment? In this story-driven short, we dive into a mind-bending idea from cognitive science: prediction. Using classic findings like the brain\u2019s rapid sensory processing and demonstrations of perceptual illusion, we\u2019ll explore how tiny gaps in time\u2014measured in fractions of a second\u2014can shape what you believe you just saw. You\u2019ll meet everyday case examples too: how eyewitness memory can drift, why decisions can feel instant but are guided by hidden expectations, and how confirmation bias can make your brain \u201cfill in the blanks\u201d to preserve a coherent narrative.\nLike if this psychology fact blew your mind! Comment your thoughts on this concept! Share this with someone who loves learning! Follow Psychology Mindscape for daily mind-expanding lessons!",
+            "success_flags": {
+                "instagram_reel": true,
+                "instagram_story": true,
+                "facebook_reel": true,
+                "facebook_story": true,
+                "threads": false,
+                "youtube": false
+            },
+            "recycled": true
+        }
     }
 ]
