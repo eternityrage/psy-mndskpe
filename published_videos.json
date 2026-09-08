@@ -4942,5 +4942,21 @@
             },
             "recycled": true
         }
+    },
+    {
+        "video_name": "Avatar_Video_2_subtitled.mp4",
+        "metadata": {
+            "title": "The Brain\u2019s Hidden Editor: How Memory Changes What You \u201cRemember\u201d (Loftus\u2019s Eye-Witness Twist)",
+            "description": "What if the story your brain tells you about the past isn\u2019t the past at all\u2014but a freshly rewritten version created in the moment? In this Psychology Mindscape episode, we dive into Elizabeth Loftus\u2019s groundbreaking eye-witness memory research, where perfectly confident people reported details that were subtly planted after an event\u2014showing how suggestion can reshape memory like a living film editor. You\u2019ll follow a story-driven case: how a single wording change (like \u201chit\u201d versus \u201ccontact\u201d) can shift what someone believes they saw, and why that matters for real-world judgments, investigations, and mental health. Along the way, we connect the dots to cognitive biases, reconsolidation, and the brain\u2019s constant prediction system\u2014because your mind isn\u2019t a recorder, it\u2019s a storyteller searching for meaning. Like if this psychology fact blew your mind! Comment your thoughts on this concept! Share this with someone who loves learning! Follow Psychology Mindscape for daily mind-expanding lessons! #psychology #brain #neuroscience #mentalhealth #psychologyfacts #mindset #selfimprovement #learning #science #behavioralscience #education #personalgrowth #cognitivebias #humanbehavior",
+            "success_flags": {
+                "instagram_reel": true,
+                "instagram_story": true,
+                "facebook_reel": true,
+                "facebook_story": true,
+                "threads": false,
+                "youtube": false
+            },
+            "recycled": true
+        }
     }
 ]
