@@ -15,6 +15,38 @@ from dotenv import load_dotenv
 env_path = Path(__file__).parent.parent / '.env'
 load_dotenv(dotenv_path=env_path, override=True)
 
+def _post_pinned_comment(video_id, description, access_token, page_id):
+    import time
+    website = "https://gleku.com/psychology-mindscape/"
+    pinned_message = f"{description}\n\n🌐 Learn more at our website: {website}"
+    print(f"[facebook] Posting pinned comment with website ({website})...")
+    max_retries = 5
+    comment_id = None
+    for attempt in range(max_retries):
+        try:
+            comment_url = f"https://graph.facebook.com/v21.0/{video_id}/comments"
+            comment_data = {'access_token': access_token, 'message': pinned_message}
+            res_comment = requests.post(comment_url, data=comment_data, timeout=30)
+            if res_comment.status_code == 200:
+                resp = res_comment.json()
+                comment_id = resp.get('id')
+                if comment_id:
+                    print(f"[facebook] Comment posted! ID: {comment_id}")
+                    break
+            elif res_comment.status_code == 404 and attempt < max_retries - 1:
+                wait = (attempt + 1) * 10
+                time.sleep(wait)
+        except Exception as e:
+            print(f"[facebook] Comment post error: {e}")
+            break
+    if comment_id:
+        try:
+            pin_url = f"https://graph.facebook.com/v21.0/{comment_id}"
+            pin_data = {'access_token': access_token, 'is_pinned': 'true'}
+            requests.post(pin_url, data=pin_data, timeout=15)
+        except Exception as e:
+            print(f"[facebook] Pin error: {e}")
+
 def upload_to_facebook(video_path, description, title="Psychology Mindscape"):
     """
     Upload video to Facebook Page as a Reel.
@@ -115,7 +147,7 @@ def upload_to_facebook(video_path, description, title="Psychology Mindscape"):
             print(f"[facebook] Video ID: {video_id}")
             print(f"[facebook] Check your Facebook Page Reels tab to see the post.")
             print("=" * 60)
-            
+            _post_pinned_comment(video_id, description, access_token, page_id)
             return {
                 'id': video_id,
                 'platform': 'facebook',
