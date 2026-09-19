@@ -5502,5 +5502,21 @@
             },
             "recycled": true
         }
+    },
+    {
+        "video_name": "Avatar_Video_48_subtitled.mp4",
+        "metadata": {
+            "title": "The Strange Way Your Brain Predicts Reality: Inside the Brain\u2019s \u201cPerception Loops\u201d (A Story from Milgram to Neuroscience)",
+            "description": "Have you ever wondered why your brain doesn\u2019t just \u201csee\u201d the world\u2014but constantly predicts it, updates it, and sometimes gets it wildly wrong? In this story-driven lesson, we\u2019ll walk through how perception works like a prediction engine, using real research on how the mind fills in gaps, how attention can distort what you think you witnessed, and how memory can quietly rewrite events. We\u2019ll connect classic psychological experiments\u2014like studies showing how social pressure can reshape decisions\u2014to modern findings about cognition, revealing how easily the brain can mistake an explanation for a fact. Then we\u2019ll turn those insights into something practical: simple, everyday tools to catch cognitive shortcuts, reduce bias in your judgments, and protect your mental clarity in real situations. Like if this psychology fact blew your mind! Comment your thoughts on this concept! Share this with someone who loves learning! Follow Psychology Mindscape for daily mind-expanding lessons!",
+            "success_flags": {
+                "instagram_reel": true,
+                "instagram_story": true,
+                "facebook_reel": true,
+                "facebook_story": true,
+                "threads": false,
+                "youtube": false
+            },
+            "recycled": true
+        }
     }
 ]
